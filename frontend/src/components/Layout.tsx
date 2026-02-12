@@ -22,7 +22,6 @@ import {
   Menu as MenuIcon,
   Dashboard as DashboardIcon,
   Add as AddIcon,
-  Help as HelpIcon,
   Logout as LogoutIcon,
   Person as PersonIcon,
   SwitchAccount as SwitchAccountIcon,
@@ -68,7 +67,6 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const menuItems = [
     { text: 'Главная', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Создать документ', icon: <AddIcon />, path: '/documents/create' },
-    { text: 'Помощь (Q/A)', icon: <HelpIcon />, path: '/qa' },
   ];
 
   const drawer = (
