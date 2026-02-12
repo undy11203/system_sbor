@@ -1,0 +1,33 @@
+frontend/
+├── src/
+│   ├── api/                    # HTTP клиент и API endpoints
+│   │   ├── axios.ts
+│   │   ├── auth.ts
+│   │   ├── documents.ts
+│   │   └── qa.ts
+│   ├── components/             # Переиспользуемые компоненты
+│   │   ├── Layout.tsx          # Общий layout с навигацией
+│   │   ├── ProtectedRoute.tsx  # Защита маршрутов по ролям
+│   │   ├── DynamicForm.tsx     # Динамическая форма документа
+│   │   ├── DocumentCard.tsx    # Карточка документа
+│   │   ├── QADialog.tsx        # Диалог с Q/A модулем
+│   │   └── StatusBadge.tsx     # Отображение статуса
+│   ├── contexts/               # React Context
+│   │   └── AuthContext.tsx     # Контекст аутентификации
+│   ├── hooks/                  # Custom hooks
+│   │   ├── useAuth.ts
+│   │   └── useDocuments.ts
+│   ├── pages/                  # Страницы приложения
+│   │   ├── Login.tsx
+│   │   ├── Dashboard.tsx       # Главная панель
+│   │   ├── DocumentCreate.tsx  # Создание документа
+│   │   ├── DocumentDetail.tsx  # Просмотр/редактирование
+│   │   └── QAPage.tsx          # Страница Q/A
+│   ├── types/                  # TypeScript типы
+│   │   ├── auth.ts
+│   │   ├── document.ts
+│   │   └── api.ts
+│   ├── utils/                  # Утилиты
+│   │   └── validation.ts       # Zod схемы валидации
+│   ├── App.tsx
+│   └── main.tsx
