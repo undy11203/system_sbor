@@ -1,0 +1,38 @@
+services:
+
+  jena-fuseki:
+    build:
+      context: .
+      dockerfile: jena/Dockerfile
+    container_name: jena-fuseki
+    ports:
+      - "3030:3030"
+    environment:
+      ADMIN_PASSWORD: admin123
+    restart: unless-stopped
+
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: backend
+  #   ports:
+  #     - "8080:8080"
+  #   environment:
+  #     # Points to jena-fuseki service name (Docker internal DNS)
+  #     FUSEKI_ENDPOINT: http://jena-fuseki:3030/ontology/sparql
+  #   depends_on:
+  #     - jena-fuseki
+  #   restart: unless-stopped
+
+# -----------------------------------------------------------------------
+# Usage:
+#   docker compose up -d              — build & start both services
+#   docker compose down               — stop & remove containers
+#   docker compose logs -f            — follow all logs
+#
+# Endpoints after start:
+#   Fuseki Web UI:     http://localhost:3030/
+#   SPARQL endpoint:   http://localhost:3030/ontology/sparql
+#   Backend API:       http://localhost:8080/api/sparql/classes
+# -----------------------------------------------------------------------
