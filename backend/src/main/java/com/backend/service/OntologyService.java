@@ -185,6 +185,8 @@ public class OntologyService {
                 if (name != null) row.put("label", name.asLiteral().getString());
                 if (!row.isEmpty()) results.add(row);
             }
+        } catch (Exception e) {
+            log.error("searchIndividuals failed for class={}: {}", classUri, e.getMessage());
         }
         return results;
     }

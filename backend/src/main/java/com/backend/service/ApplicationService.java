@@ -2,6 +2,8 @@ package com.backend.service;
 
 import com.backend.dto.ApplicationSubmitRequest;
 import com.backend.dto.ApplicationSubmitResponse;
+import com.backend.dto.FormFieldSpec;
+import com.backend.dto.FormSection;
 import org.apache.jena.sparql.exec.http.UpdateExecHTTP;
 import org.apache.jena.update.UpdateFactory;
 import org.apache.jena.update.UpdateRequest;
@@ -26,51 +28,65 @@ public class ApplicationService {
     @Value("${ontology.base-namespace}")
     private String ns;
 
+    private final FormSchemaService formSchemaService;
+
+    public ApplicationService(FormSchemaService formSchemaService) {
+        this.formSchemaService = formSchemaService;
+    }
+
     /**
      * Saves a submitted student form into the ontology (Fuseki via SPARQL UPDATE).
      *
-     * Creates two individuals:
-     *   1. Student individual (typed as Бакалавриат or Магистратура) with all filled properties.
-     *   2. VKR individual (typed as ВКР) — only if any VKR fields were filled.
+     * Uses form-schema.yaml (via FormSchemaService) to determine for each property:
+     *   - which individual it belongs to (entity: student / vkr)
+     *   - how to write it (datatype → literal, object → URI)
+     *   - triple direction (reversed: true → value is subject, entity is object)
      *
-     * Returns URIs of created individuals and "SUBMITTED" status.
+     * Always creates a Student individual.
+     * Creates a VKR individual + student→защищает→vkr only when VKR fields are present.
      */
     public ApplicationSubmitResponse submit(ApplicationSubmitRequest req) {
-        String uid = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+        String uid        = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
         String studentUri = ns + "Студент_" + uid;
         String vkrUri     = ns + "ВКР_" + uid;
 
-        boolean hasVkr = req.getVkrDatatype().values().stream().anyMatch(v -> v != null && !v.isBlank())
-                      || req.getVkrObject().values().stream().anyMatch(v -> v != null && !v.isBlank());
+        Map<String, String> values = req.getValues();
+
+        // Check if any VKR field has a value
+        boolean hasVkr = formSchemaService.getSchema().getSections().stream()
+                .flatMap(s -> s.getFields().stream())
+                .filter(f -> "vkr".equals(f.getEntity()))
+                .anyMatch(f -> hasValue(values, f.getPropUri()));
 
         StringBuilder sb = new StringBuilder("INSERT DATA {\n");
 
-        // ── Student individual ────────────────────────────────────────────────
+        // Student individual typed as the chosen degree
         appendUri(sb, studentUri, RDF_TYPE, ns + req.getDegree());
 
-        for (Map.Entry<String, String> e : req.getStudentDatatype().entrySet()) {
-            if (e.getValue() != null && !e.getValue().isBlank()) {
-                appendLiteral(sb, studentUri, e.getKey(), e.getValue());
-            }
-        }
-        for (Map.Entry<String, String> e : req.getStudentObject().entrySet()) {
-            if (e.getValue() != null && !e.getValue().isBlank()) {
-                appendUri(sb, studentUri, e.getKey(), e.getValue());
-            }
-        }
-
-        // ── VKR individual ────────────────────────────────────────────────────
+        // VKR individual + link from student
         if (hasVkr) {
             appendUri(sb, vkrUri, RDF_TYPE, ns + "ВКР");
+            appendUri(sb, studentUri, ns + "защищает", vkrUri);
+        }
 
-            for (Map.Entry<String, String> e : req.getVkrDatatype().entrySet()) {
-                if (e.getValue() != null && !e.getValue().isBlank()) {
-                    appendLiteral(sb, vkrUri, e.getKey(), e.getValue());
-                }
-            }
-            for (Map.Entry<String, String> e : req.getVkrObject().entrySet()) {
-                if (e.getValue() != null && !e.getValue().isBlank()) {
-                    appendUri(sb, vkrUri, e.getKey(), e.getValue());
+        // Write each filled property according to schema metadata
+        for (FormSection section : formSchemaService.getSchema().getSections()) {
+            for (FormFieldSpec field : section.getFields()) {
+                String val = values.get(field.getPropUri());
+                if (val == null || val.isBlank()) continue;
+
+                String entityUri = "student".equals(field.getEntity()) ? studentUri : vkrUri;
+
+                if ("datatype".equals(field.getType())) {
+                    appendLiteral(sb, entityUri, field.getPropUri(), val);
+                } else {
+                    if (field.isReversed()) {
+                        // e.g. <supervisorUri> согласовывает <vkrUri>
+                        appendUri(sb, val, field.getPropUri(), entityUri);
+                    } else {
+                        // e.g. <studentUri> на_НГУ_практике_у <supervisorUri>
+                        appendUri(sb, entityUri, field.getPropUri(), val);
+                    }
                 }
             }
         }
@@ -91,6 +107,11 @@ public class ApplicationService {
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────
+
+    private static boolean hasValue(Map<String, String> values, String propUri) {
+        String v = values.get(propUri);
+        return v != null && !v.isBlank();
+    }
 
     private void appendUri(StringBuilder sb, String subject, String pred, String object) {
         sb.append("  <").append(subject).append("> ")

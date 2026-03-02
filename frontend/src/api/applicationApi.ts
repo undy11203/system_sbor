@@ -10,14 +10,8 @@ api.interceptors.request.use(config => {
 
 export interface SubmitApplicationRequest {
   degree: string;
-  /** Student DatatypeProperty values: full prop URI → literal value */
-  studentDatatype: Record<string, string>;
-  /** Student ObjectProperty values: full prop URI → individual URI */
-  studentObject: Record<string, string>;
-  /** VKR DatatypeProperty values: full prop URI → literal value */
-  vkrDatatype: Record<string, string>;
-  /** VKR ObjectProperty values: full prop URI → individual URI */
-  vkrObject: Record<string, string>;
+  /** Flat map: full OWL property URI → value (literal or individual URI) */
+  values: Record<string, string>;
 }
 
 export interface SubmitApplicationResponse {

@@ -1,0 +1,104 @@
+# Form schema for the student application form.
+# namespace is used to expand prop and range local names to full OWL URIs.
+# entity: student | vkr  — which individual this property belongs to
+# type:   datatype | object — literal value vs individual reference
+# range:  local name of the OWL class for object properties (used for individual search)
+# reversed: true — OWL direction is <value> <prop> <entityUri> instead of <entityUri> <prop> <value>
+
+namespace: "http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#"
+
+sections:
+
+  - title: "Данные студента"
+    fields:
+      - prop: "ФИО"
+        entity: student
+        type: datatype
+        label: "ФИО студента"
+        required: true
+        hint: "Фамилия Имя Отчество полностью"
+
+      - prop: "группа"
+        entity: student
+        type: datatype
+        label: "Группа"
+        required: true
+
+      - prop: "Профиль_обучения"
+        entity: student
+        type: datatype
+        label: "Профиль обучения"
+        required: false
+
+  - title: "Место практики"
+    fields:
+      - prop: "Место_практики_полное_наименование"
+        entity: student
+        type: datatype
+        label: "Полное наименование места практики"
+        required: false
+
+      - prop: "Наименование_организации"
+        entity: student
+        type: datatype
+        label: "Наименование организации"
+        required: false
+
+      - prop: "Приказ_на_прохождение_практики"
+        entity: student
+        type: datatype
+        label: "Номер приказа на прохождение практики"
+        required: false
+
+  - title: "Руководители практики"
+    fields:
+      - prop: "на_НГУ_практике_у"
+        entity: student
+        type: object
+        label: "Руководитель практики от НГУ"
+        range: "Руководитель_от_НГУ"
+        required: false
+        hint: "Начните вводить ФИО"
+
+      - prop: "на_орг_практике_у"
+        entity: student
+        type: object
+        label: "Руководитель практики от организации"
+        range: "Руководитель_от_организации"
+        required: false
+        hint: "Начните вводить ФИО"
+
+  - title: "ВКР"
+    fields:
+      - prop: "Тема"
+        entity: vkr
+        type: datatype
+        label: "Тема ВКР"
+        required: false
+
+      - prop: "согласовывает"
+        entity: vkr
+        type: object
+        label: "Руководитель ВКР"
+        range: "Руководитель_ВКР"
+        required: false
+        hint: "Начните вводить ФИО"
+        reversed: true
+
+      - prop: "рецензирует"
+        entity: vkr
+        type: object
+        label: "Рецензент ВКР"
+        range: "Рецензент"
+        required: false
+        hint: "Начните вводить ФИО"
+        reversed: true
+
+      - prop: "руководит_с"
+        entity: vkr
+        type: object
+        label: "Соруководитель ВКР"
+        range: "Соруководитель_ВКР"
+        required: false
+        hint: "Начните вводить ФИО"
+        reversed: true

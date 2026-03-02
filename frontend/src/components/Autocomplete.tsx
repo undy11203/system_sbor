@@ -42,6 +42,9 @@ export default function Autocomplete({ placeholder, fetchSuggestions, onSelect, 
         const res = await fetchSuggestions(val.trim());
         setSuggestions(res);
         setOpen(res.length > 0);
+      } catch {
+        setSuggestions([]);
+        setOpen(false);
       } finally {
         setLoading(false);
       }

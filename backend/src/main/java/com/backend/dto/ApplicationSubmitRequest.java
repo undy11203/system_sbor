@@ -13,15 +13,11 @@ public class ApplicationSubmitRequest {
     @NotBlank
     private String degree;
 
-    /** Student DatatypeProperty values: full prop URI → literal value */
-    private Map<String, String> studentDatatype = new HashMap<>();
-
-    /** Student ObjectProperty values: full prop URI → individual URI */
-    private Map<String, String> studentObject = new HashMap<>();
-
-    /** VKR DatatypeProperty values: full prop URI → literal value */
-    private Map<String, String> vkrDatatype = new HashMap<>();
-
-    /** VKR ObjectProperty values: full prop URI → individual URI */
-    private Map<String, String> vkrObject = new HashMap<>();
+    /**
+     * Flat map of all filled form values: full OWL property URI → value.
+     * For datatype properties the value is a literal string.
+     * For object properties the value is an individual URI.
+     * The service uses the form schema to determine how each property is written.
+     */
+    private Map<String, String> values = new HashMap<>();
 }

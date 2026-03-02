@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { getStudentFields, getVkrFields, searchIndividuals, searchPropertyValues } from '../api/ontologyApi';
-import type { FormFieldDef, IndividualSuggestion } from '../api/ontologyApi';
+import { getFormSchema, type FormFieldSpec, type FormSection } from '../api/formSchemaApi';
+import { searchIndividuals, searchPropertyValues } from '../api/ontologyApi';
+import type { IndividualSuggestion } from '../api/ontologyApi';
 import { submitApplication } from '../api/applicationApi';
 import Autocomplete from '../components/Autocomplete';
 import './StudentFormPage.css';
@@ -10,8 +11,7 @@ type Degree = 'Бакалавриат' | 'Магистратура';
 
 export default function StudentFormPage() {
   const [degree, setDegree] = useState<Degree>('Бакалавриат');
-  const [fields, setFields] = useState<FormFieldDef[]>([]);
-  const [vkrFields, setVkrFields] = useState<FormFieldDef[]>([]);
+  const [sections, setSections] = useState<FormSection[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -19,29 +19,15 @@ export default function StudentFormPage() {
   const [studentUri, setStudentUri] = useState<string | null>(null);
   const [downloading, setDownloading] = useState(false);
 
-  // propUri → literal value (student datatype fields)
-  const [studentDatatype, setStudentDatatype] = useState<Record<string, string>>({});
-  // propUri → individual URI (student object fields)
-  const [studentObject, setStudentObject] = useState<Record<string, string>>({});
-  // propUri → literal value (VKR datatype fields)
-  const [vkrDatatype, setVkrDatatype] = useState<Record<string, string>>({});
-  // propUri → individual URI (VKR object fields)
-  const [vkrObject, setVkrObject] = useState<Record<string, string>>({});
+  // propUri → value (literal for datatype fields, individual URI for object fields)
+  const [values, setValues] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setLoading(true);
     setError('');
-    setStudentDatatype({});
-    setStudentObject({});
-    setVkrDatatype({});
-    setVkrObject({});
-    Promise.all([getStudentFields(degree), getVkrFields()])
-      .then(([studentData, vkrData]) => {
-        setFields(studentData);
-        setVkrFields(vkrData);
-        if (studentData.length === 0 && vkrData.length === 0) {
-          setError('Поля не найдены — возможно, онтология не содержит данных класса ' + degree);
-        }
+    getFormSchema()
+      .then(schema => {
+        setSections(schema.sections);
       })
       .catch(err => {
         if (axios.isAxiosError(err)) {
@@ -59,39 +45,17 @@ export default function StudentFormPage() {
         } else {
           setError('Неизвестная ошибка: ' + String(err));
         }
-        console.error('[StudentFormPage] ошибка загрузки полей:', err);
+        console.error('[StudentFormPage] ошибка загрузки схемы:', err);
       })
       .finally(() => setLoading(false));
-  }, [degree]);
+  }, []); // schema is degree-independent
 
   // ── handlers ─────────────────────────────────────────────────────────────
 
-  function onStudentDatatype(propUri: string, value: string) {
-    setStudentDatatype(prev => ({ ...prev, [propUri]: value }));
-  }
-
-  function onStudentObject(propUri: string, individualUri: string) {
-    setStudentObject(prev => ({ ...prev, [propUri]: individualUri }));
-  }
-
-  function onVkrDatatype(propUri: string, value: string) {
-    setVkrDatatype(prev => ({ ...prev, [propUri]: value }));
-  }
-
-  function onVkrObject(propUri: string, individualUri: string) {
-    setVkrObject(prev => ({ ...prev, [propUri]: individualUri }));
-  }
-
-  // ── fetchers ──────────────────────────────────────────────────────────────
-
-  function makeIndividualFetcher(classUri: string) {
-    return (query: string): Promise<IndividualSuggestion[]> =>
-      searchIndividuals(classUri, query);
-  }
-
-  function makeValueFetcher(propUri: string) {
-    return (query: string): Promise<IndividualSuggestion[]> =>
-      searchPropertyValues(propUri, query);
+  function onValue(field: FormFieldSpec, uri: string, label: string) {
+    // object fields store the individual URI, datatype fields store the literal
+    const val = field.type === 'object' ? uri : label;
+    setValues(prev => ({ ...prev, [field.propUri]: val }));
   }
 
   // ── submit ────────────────────────────────────────────────────────────────
@@ -101,7 +65,7 @@ export default function StudentFormPage() {
     setSubmitting(true);
     setError('');
     try {
-      const res = await submitApplication({ degree, studentDatatype, studentObject, vkrDatatype, vkrObject });
+      const res = await submitApplication({ degree, values });
       setStudentUri(res.studentUri);
       setSubmitted(true);
     } catch (err) {
@@ -164,10 +128,7 @@ export default function StudentFormPage() {
               setSubmitted(false);
               setStudentUri(null);
               setError('');
-              setStudentDatatype({});
-              setStudentObject({});
-              setVkrDatatype({});
-              setVkrObject({});
+              setValues({});
             }}>
               Подать ещё одну заявку
             </button>
@@ -179,34 +140,31 @@ export default function StudentFormPage() {
 
   // ── field rendering helper ────────────────────────────────────────────────
 
-  function renderField(
-    f: FormFieldDef,
-    onDatatype: (propUri: string, value: string) => void,
-    onObject: (propUri: string, uri: string) => void,
-  ) {
+  function makeFetcher(field: FormFieldSpec) {
+    return (query: string): Promise<IndividualSuggestion[]> => {
+      if (field.type === 'object' && field.rangeUri) {
+        return searchIndividuals(field.rangeUri, query);
+      }
+      return searchPropertyValues(field.propUri, query);
+    };
+  }
+
+  function renderField(field: FormFieldSpec) {
     return (
-      <div key={f.prop} className="sf__field">
-        <label className="sf__label">{f.label ?? f.localName}</label>
-        {f.comment && <span className="sf__hint">{f.comment}</span>}
-        {f.type === 'object' && f.range ? (
-          <Autocomplete
-            placeholder="Начните вводить ФИО..."
-            fetchSuggestions={makeIndividualFetcher(f.range)}
-            onSelect={(uri) => onObject(f.prop, uri)}
-          />
-        ) : (
-          <Autocomplete
-            placeholder={f.label ?? f.localName}
-            fetchSuggestions={makeValueFetcher(f.prop)}
-            onSelect={(_, label) => onDatatype(f.prop, label)}
-          />
-        )}
+      <div key={field.propUri} className="sf__field">
+        <label className="sf__label">
+          {field.label}
+          {field.required && <span className="sf__required"> *</span>}
+        </label>
+        {field.hint && <span className="sf__hint">{field.hint}</span>}
+        <Autocomplete
+          placeholder={'Начните вводить...'}
+          fetchSuggestions={makeFetcher(field)}
+          onSelect={(uri, label) => onValue(field, uri, label)}
+        />
       </div>
     );
   }
-
-  const datatypeFields = fields.filter(f => f.type === 'datatype');
-  const objectFields   = fields.filter(f => f.type === 'object');
 
   return (
     <div className="sf">
@@ -225,42 +183,23 @@ export default function StudentFormPage() {
         ))}
       </div>
 
-      {loading && <p className="sf__loading">Загрузка полей формы...</p>}
+      {loading && <p className="sf__loading">Загрузка формы...</p>}
       {error && <p className="sf__error">{error}</p>}
 
       {!loading && !error && (
-        <form className="sf__form" onSubmit={handleSubmit} key={degree}>
-
-          {datatypeFields.length > 0 && (
-            <section className="sf__section">
-              <h2 className="sf__section-title">Данные студента</h2>
-              {datatypeFields.map(f => renderField(f, onStudentDatatype, onStudentObject))}
+        <form className="sf__form" onSubmit={handleSubmit}>
+          {sections.map(section => (
+            <section key={section.title} className="sf__section">
+              <h2 className="sf__section-title">{section.title}</h2>
+              {section.fields.map(renderField)}
             </section>
-          )}
-
-          {objectFields.length > 0 && (
-            <section className="sf__section">
-              <h2 className="sf__section-title">Руководители</h2>
-              <p className="sf__section-hint">
-                Начните вводить ФИО — система предложит варианты из базы кафедры.
-              </p>
-              {objectFields.map(f => renderField(f, onStudentDatatype, onStudentObject))}
-            </section>
-          )}
-
-          {vkrFields.length > 0 && (
-            <section className="sf__section">
-              <h2 className="sf__section-title">Тема ВКР</h2>
-              {vkrFields.map(f => renderField(f, onVkrDatatype, onVkrObject))}
-            </section>
-          )}
+          ))}
 
           <div className="sf__actions">
             <button className="sf__btn sf__btn--primary" type="submit" disabled={submitting}>
               {submitting ? 'Отправка...' : 'Отправить заявление'}
             </button>
           </div>
-
         </form>
       )}
     </div>

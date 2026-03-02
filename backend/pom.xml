@@ -82,6 +82,12 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
+        <!-- YAML parsing for form schema -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+
         <!-- Spring Security -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
