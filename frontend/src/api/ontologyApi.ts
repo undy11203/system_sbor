@@ -27,11 +27,6 @@ export async function getStudentFields(degree: string): Promise<FormFieldDef[]> 
   return data;
 }
 
-export async function getVkrFields(): Promise<FormFieldDef[]> {
-  const { data } = await api.get<FormFieldDef[]>('/fields/vkr');
-  return data;
-}
-
 export async function searchIndividuals(classUri: string, search: string): Promise<IndividualSuggestion[]> {
   const { data } = await api.get<IndividualSuggestion[]>('/individuals', {
     params: { classUri, search },

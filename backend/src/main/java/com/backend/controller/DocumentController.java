@@ -27,7 +27,7 @@ public class DocumentController {
     public ResponseEntity<byte[]> getDocuments(@RequestParam String studentUri) {
         log.info("Document generation requested for student: {}", studentUri);
         try {
-            byte[] zip = documentFillService.generateZip(studentUri);
+            byte[] zip = documentFillService.generateZipViaHelper(studentUri);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType("application/zip"));
@@ -38,7 +38,7 @@ public class DocumentController {
         } catch (IllegalArgumentException e) {
             log.warn("Student not found: {}", e.getMessage());
             return ResponseEntity.notFound().build();
-        } catch (Exception e) {
+        } catch (Throwable e) {
             log.error("Failed to generate documents for {}: {}", studentUri, e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }

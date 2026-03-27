@@ -1,0 +1,20 @@
+namespace: "http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#"
+
+sections:
+
+  - title: "Данные руководителя"
+    fields:
+      - prop: "ФИО"
+        entity: supervisor
+        type: datatype
+        label: "ФИО"
+        required: true
+        mainName: true
+        hint: "Фамилия Имя Отчество полностью"
+
+      - prop: "Должность_в_НГУ"
+        entity: supervisor
+        type: datatype
+        label: "Должность в НГУ"
+        required: false
+        hint: "Например: доцент, ст. преп."

@@ -5,6 +5,7 @@ import RequireAuth from './components/RequireAuth';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/LoginPage';
 import StudentFormPage from './pages/StudentFormPage';
+import SecretaryPage from './pages/SecretaryPage';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
           <Route element={<RequireAuth><Layout /></RequireAuth>}>
             <Route path="/" element={<HomePage />} />
             <Route path="/form" element={<StudentFormPage />} />
+            <Route path="/secretary" element={<SecretaryPage />} />
           </Route>
         </Routes>
       </BrowserRouter>

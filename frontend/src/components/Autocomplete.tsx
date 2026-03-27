@@ -6,10 +6,11 @@ interface Props {
   placeholder?: string;
   fetchSuggestions: (query: string) => Promise<IndividualSuggestion[]>;
   onSelect: (uri: string, label: string) => void;
+  onChange?: (value: string) => void;
   initialValue?: string;
 }
 
-export default function Autocomplete({ placeholder, fetchSuggestions, onSelect, initialValue }: Props) {
+export default function Autocomplete({ placeholder, fetchSuggestions, onSelect, onChange, initialValue }: Props) {
   const [inputVal, setInputVal] = useState(initialValue ?? '');
   const [suggestions, setSuggestions] = useState<IndividualSuggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -30,6 +31,7 @@ export default function Autocomplete({ placeholder, fetchSuggestions, onSelect, 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
     setInputVal(val);
+    onChange?.(val);
     if (timerRef.current) clearTimeout(timerRef.current);
     if (val.trim().length < 2) {
       setSuggestions([]);

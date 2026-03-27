@@ -13,10 +13,8 @@ import java.util.Map;
  *
  * Endpoints:
  *   GET /api/ontology/fields/student?degree=Бакалавриат   — student (Бакалавриат/Магистратура)
- *   GET /api/ontology/fields/supervisor/vkr               — Руководитель_ВКР
  *   GET /api/ontology/fields/supervisor/ngu               — Руководитель_от_НГУ
  *   GET /api/ontology/fields/supervisor/org               — Руководитель_от_организации
- *   GET /api/ontology/fields/vkr                          — ВКР (topic)
  */
 @RestController
 @RequestMapping("/api/ontology")
@@ -29,33 +27,6 @@ public class OntologyController {
 
     public OntologyController(OntologyService ontologyService) {
         this.ontologyService = ontologyService;
-    }
-
-    @GetMapping("/fields/student")
-    public ResponseEntity<List<Map<String, String>>> getStudentFields(
-            @RequestParam(defaultValue = "Бакалавриат") String degree) {
-        return ResponseEntity.ok(ontologyService.getFormFields(ns + degree));
-    }
-
-    @GetMapping("/fields/supervisor/vkr")
-    public ResponseEntity<List<Map<String, String>>> getSupervisorVkrFields() {
-        return ResponseEntity.ok(ontologyService.getFormFields(ns + "Руководитель_ВКР"));
-    }
-
-    @GetMapping("/fields/supervisor/ngu")
-    public ResponseEntity<List<Map<String, String>>> getSupervisorNguFields() {
-        return ResponseEntity.ok(ontologyService.getFormFields(ns + "Руководитель_от_НГУ"));
-    }
-
-    @GetMapping("/fields/supervisor/org")
-    public ResponseEntity<List<Map<String, String>>> getSupervisorOrgFields() {
-        return ResponseEntity.ok(ontologyService.getFormFields(ns + "Руководитель_от_организации"));
-    }
-
-    @GetMapping("/fields/vkr")
-    public ResponseEntity<List<Map<String, String>>> getVkrFields() {
-        // Uses schema-based (rdfs:domain) discovery so fields appear even without existing ВКР instances.
-        return ResponseEntity.ok(ontologyService.getVkrFormFields());
     }
 
     /**

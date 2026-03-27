@@ -27,6 +27,9 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**").permitAll()
+                .requestMatchers("/api/applications/**").hasRole("STUDENT")
+                .requestMatchers("/api/documents/**").hasRole("SECRETARY")
+                .requestMatchers("/api/ontology/**").authenticated()
                 .anyRequest().authenticated()
             )
             .exceptionHandling(ex -> ex

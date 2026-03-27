@@ -16,7 +16,7 @@ public class FormFieldSpec {
     /** Full OWL property URI (set by FormSchemaService after loading) */
     private String propUri;
 
-    /** Which individual this property describes: "student" or "vkr" */
+    /** Which individual this property describes: currently always "student" */
     private String entity;
 
     /** Input type: "datatype" (text) or "object" (individual reference) */
@@ -27,6 +27,12 @@ public class FormFieldSpec {
 
     /** Whether the field is required */
     private boolean required;
+
+    /**
+     * When true, the submitted value of this field is used as the individual's
+     * rdf:about local name (spaces removed), e.g. "Иванов Иван Иванович" → IvanovIvanIvanovich.
+     */
+    private boolean mainName;
 
     /** Optional hint text shown below the field */
     private String hint;

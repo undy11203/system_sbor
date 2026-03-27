@@ -37,9 +37,9 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const { token, email: userEmail } = await verifyCode(email, code);
-      login(token, userEmail);
-      navigate('/');
+      const { token, email: userEmail, role } = await verifyCode(email, code);
+      login(token, userEmail, role);
+      navigate(role === 'SECRETARY' ? '/secretary' : '/');
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { error?: string } } })
         ?.response?.data?.error ?? 'Неверный код';

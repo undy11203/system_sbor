@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import ru.nsu.fit.chernyavtseva.assistant.DocumentService;
 
 import java.io.*;
 import java.util.*;
@@ -40,6 +41,42 @@ public class DocumentFillService {
 
     // ── public API ────────────────────────────────────────────────────────────
 
+    /**
+     * Alternative generation via hepler's DocumentGenerator.
+     * Fetches student data from Fuseki, wraps it in a Jena 2.x QuerySolutionMap,
+     * and calls DocumentGenerator.generate() which fills templates and writes them
+     * to the classpath documents directory. Files are then packed into a ZIP.
+     */
+    public byte[] generateZipViaHelper(String studentUri) throws IOException {
+        log.info("[helper] generateZipViaHelper start, uri={}", studentUri);
+
+        Map<String, String> vars = fetchStudentVars(studentUri);
+        log.info("[helper] fetchStudentVars returned {} keys: {}", vars.size(), vars.keySet());
+        if (vars.isEmpty()) {
+            throw new IllegalArgumentException("Student not found or has no data: " + studentUri);
+        }
+
+        String degreeClass = fetchDegreeClass(studentUri);
+        String degreeDir = resolveTemplateDir(degreeClass, vars.getOrDefault("профиль", ""));
+        log.info("[helper] degreeClass={}, degreeDir={}", degreeClass, degreeDir);
+
+        Map<String, byte[]> docs = DocumentService.generateForStudent(degreeDir, vars);
+        log.info("[helper] DocumentService returned {} documents: {}", docs.size(), docs.keySet());
+
+        ByteArrayOutputStream zipBuffer = new ByteArrayOutputStream();
+        try (ZipOutputStream zos = new ZipOutputStream(zipBuffer)) {
+            for (Map.Entry<String, byte[]> entry : docs.entrySet()) {
+                log.debug("[helper] packing: {}", entry.getKey());
+                zos.putNextEntry(new ZipEntry(entry.getKey()));
+                zos.write(entry.getValue());
+                zos.closeEntry();
+            }
+        }
+        log.info("[helper] zip built, size={}", zipBuffer.size());
+        return zipBuffer.toByteArray();
+    }
+
+    
     /**
      * Generates all applicable templates for the given student URI.
      * Returns a ZIP archive as byte[].
@@ -96,32 +133,11 @@ public class DocumentFillService {
                     OPTIONAL { ?орг_рук my:ДатаМагМДА ?маг_дата_рук_мда . }
                     OPTIONAL { ?орг_рук my:ДатаМагТРПС ?маг_дата_рук_трпс . }
                 }
-                OPTIONAL {
-                    <%s> my:защищает ?вкр .
-                    OPTIONAL { ?вкр my:Тема ?тема_вкр . }
-                    OPTIONAL {
-                        ?рук my:согласовывает ?вкр .
-                        ?рук my:ФИО ?фио_руководителя .
-                        OPTIONAL { ?рук my:Должность_руководителя_ВКР ?должность_руководителя_вкр . }
-                        OPTIONAL { ?рук my:Ученая_степень_руководителя_ВКР ?ученая_степень_руководителя_ВКР . }
-                        OPTIONAL { ?рук my:Должность_руководителя_ВКР_кратко ?должность_руководителя_вкр_кратко . }
-                    }
-                    OPTIONAL {
-                        ?рец my:рецензирует ?вкр .
-                        ?рец my:ФИО ?фио_рецензента .
-                        OPTIONAL { ?рец my:Должность ?должность_рецензента . }
-                    }
-                    OPTIONAL {
-                        ?сорук my:руководит_с ?вкр .
-                        ?сорук my:ФИО ?фио_соруководителя_вкр .
-                        OPTIONAL { ?сорук my:Должность ?должность_соруководителя_вкр . }
-                    }
-                }
             }
             """.formatted(NS,
                 studentUri, studentUri, studentUri, studentUri,
                 studentUri, studentUri, studentUri, studentUri,
-                studentUri, studentUri);
+                studentUri);
 
         Map<String, String> vars = new LinkedHashMap<>();
         try (QueryExecution qe = QueryExecutionHTTP.newBuilder()
@@ -191,72 +207,28 @@ public class DocumentFillService {
     private Map<String, String> buildPlaceholders(Map<String, String> vars) {
         Map<String, String> p = new LinkedHashMap<>();
 
+        // Student FIO: именительный (Отзыв), родительный (Заявление, Отчёт), гендерные формы
         String fio = vars.get("фио_студента");
         if (fio != null) {
-            p.put("имяСтудента",     fio);
-            p.put("фиоСтудента",     fio);
-            p.put("имяСтудентаР",    declineFio(fio, Case.Genitive));
-            p.put("имяСтудентаД",    declineFio(fio, Case.Dative));
-            p.put("имяСтудентаВ",    declineFio(fio, Case.Accusative));
-            p.put("имяСтудентаТ",    declineFio(fio, Case.Instrumental));
-            p.put("имяСтудентаП",    declineFio(fio, Case.Prepositional));
-            p.put("обучСтудОбрПадеж", genderObuchRod(fio));
-            p.put("обучСтудИмПадеж",  genderObuchIm(fio));
-            p.put("гендерСтудента",   genderForm(fio));
+            p.put("имяСтудентаИ",     fio);
+            p.put("имяСтудентаР",     declineFio(fio, Case.Genitive));
+            p.put("обучСтудОбрПадеж", genderObuchRod(fio));  // "Обучающегося/ейся"
+            p.put("обучФиоИм",        genderObuchIm(fio));   // "Обучающийся/аяся"
         }
 
-        ifPresent(vars, "группа_студента",                         p, "группаСтудента");
-        ifPresent(vars, "место_практики",                          p, "местоПрактики");
-        ifPresent(vars, "приказ_практика",                         p, "приказПрактика");
-        ifPresent(vars, "место_практики_полное_наименование",      p, "полноеНаименованиеМестаПрактики");
-        ifPresent(vars, "наименование_организации",                p, "наименованиеОрганизации");
+        ifPresent(vars, "группа_студента",                    p, "группаСтудента");
+        ifPresent(vars, "место_практики",                     p, "местоПрактики");
+        ifPresent(vars, "место_практики_полное_наименование", p, "полноеНаименованиеМестаПрактики");
+        ifPresent(vars, "наименование_организации",           p, "наименованиеОрганизации");
 
-        // NGU supervisor
-        String fioNgu = vars.get("фио_НГУ_руководителя");
-        if (fioNgu != null) {
-            p.put("имяНГУРуководителя",   fioNgu);
-            p.put("имяНГУРуководителяР",  declineFio(fioNgu, Case.Genitive));
-        }
-        ifPresent(vars, "должность_НГУ_руководителя", p, "должностьНГУРуководителя");
+        // NGU supervisor (Отчёт о практике)
+        ifPresent(vars, "фио_НГУ_руководителя",       p, "имяРуководителяОтНГУ");
+        ifPresent(vars, "должность_НГУ_руководителя", p, "должностьВНГУ");
 
-        // Org supervisor
-        String fioOrg = vars.get("фио_орг_руководителя");
-        if (fioOrg != null) {
-            p.put("имяОргРуководителя",  fioOrg);
-            p.put("имяОргРуководителяР", declineFio(fioOrg, Case.Genitive));
-        }
-        ifPresent(vars, "должность_орг_руководителя", p, "должностьОргРуководителя");
-        ifPresent(vars, "фио_подпись",                p, "фиоПодпись");
-        ifPresent(vars, "бак_дата_рук",               p, "бакДатаРук");
-        ifPresent(vars, "маг_дата_рук_мда",           p, "магДатаРукМДА");
-        ifPresent(vars, "маг_дата_рук_трпс",          p, "магДатаРукТРПС");
-
-        // VKR supervisor
-        String fioRuk = vars.get("фио_руководителя");
-        if (fioRuk != null) {
-            p.put("имяРуководителяВКР",  fioRuk);
-            p.put("имяРуководителяР",    declineFio(fioRuk, Case.Genitive));
-        }
-        ifPresent(vars, "должность_руководителя_вкр",        p, "должностьРуководителяПолноВКР");
-        ifPresent(vars, "должность_руководителя_вкр_кратко", p, "должностьРуководителяКраткоВКР");
-        ifPresent(vars, "ученая_степень_руководителя_ВКР",   p, "ученаяСтепеньРуководителяВКР");
-        ifPresent(vars, "тема_вкр",                           p, "темаВКР");
-
-        // Reviewer
-        String fioRec = vars.get("фио_рецензента");
-        if (fioRec != null) {
-            p.put("имяРецензента",  fioRec);
-            p.put("имяРецензентаР", declineFio(fioRec, Case.Genitive));
-        }
-        ifPresent(vars, "должность_рецензента", p, "должностьРецензента");
-
-        // Co-supervisor
-        String fioSoRuk = vars.get("фио_соруководителя_вкр");
-        if (fioSoRuk != null) {
-            p.put("имяСоруководителяВКР",  fioSoRuk);
-            p.put("имяСоруководителяВКРР", declineFio(fioSoRuk, Case.Genitive));
-        }
-        ifPresent(vars, "должность_соруководителя_вкр", p, "должностьСоруководителяВКР");
+        // Org supervisor (Отзыв, Отчёт о практике)
+        ifPresent(vars, "фио_орг_руководителя",       p, "имяРуководителяОтОрганизации");
+        ifPresent(vars, "должность_орг_руководителя", p, "должностьВОрганизации");
+        ifPresent(vars, "фио_подпись",                p, "имяДляПодписи");
 
         return p;
     }
@@ -298,10 +270,6 @@ public class DocumentFillService {
 
     private String genderObuchIm(String fio) {
         return isFemale(fio) ? "Обучающаяся" : "Обучающийся";
-    }
-
-    private String genderForm(String fio) {
-        return isFemale(fio) ? "студентке" : "студенту";
     }
 
     private boolean isFemale(String fio) {

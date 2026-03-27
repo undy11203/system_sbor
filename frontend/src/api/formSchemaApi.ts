@@ -11,7 +11,7 @@ api.interceptors.request.use(config => {
 export interface FormFieldSpec {
   prop: string;
   propUri: string;
-  entity: 'student' | 'vkr';
+  entity: string;
   type: 'datatype' | 'object';
   label: string;
   required: boolean;
@@ -30,7 +30,7 @@ export interface FormSchema {
   sections: FormSection[];
 }
 
-export async function getFormSchema(): Promise<FormSchema> {
-  const { data } = await api.get<FormSchema>('/schema');
+export async function getFormSchema(type = 'student'): Promise<FormSchema> {
+  const { data } = await api.get<FormSchema>('/schema', { params: { type } });
   return data;
 }

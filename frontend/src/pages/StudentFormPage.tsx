@@ -158,9 +158,10 @@ export default function StudentFormPage() {
         </label>
         {field.hint && <span className="sf__hint">{field.hint}</span>}
         <Autocomplete
-          placeholder={'Начните вводить...'}
+          placeholder={field.hint ? field.hint : 'Начните вводить...'}
           fetchSuggestions={makeFetcher(field)}
           onSelect={(uri, label) => onValue(field, uri, label)}
+          onChange={field.type === 'datatype' ? (val) => onValue(field, val, val) : undefined}
         />
       </div>
     );

@@ -16,11 +16,13 @@ export interface SubmitApplicationRequest {
 
 export interface SubmitApplicationResponse {
   studentUri: string;
-  vkrUri: string | null;
   status: string;
 }
 
-export async function submitApplication(req: SubmitApplicationRequest): Promise<SubmitApplicationResponse> {
-  const { data } = await api.post<SubmitApplicationResponse>('', req);
+export async function submitApplication(
+  req: SubmitApplicationRequest,
+  type = 'student',
+): Promise<SubmitApplicationResponse> {
+  const { data } = await api.post<SubmitApplicationResponse>('', req, { params: { type } });
   return data;
 }
