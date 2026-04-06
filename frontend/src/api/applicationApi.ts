@@ -26,3 +26,32 @@ export async function submitApplication(
   const { data } = await api.post<SubmitApplicationResponse>('', req, { params: { type } });
   return data;
 }
+
+export interface EntryItem {
+  uri: string;
+  label: string;
+  degree?: string;
+}
+
+export interface EntryData {
+  values: Record<string, string>;
+  labels: Record<string, string>;
+}
+
+export async function listEntries(type: string): Promise<EntryItem[]> {
+  const { data } = await api.get<EntryItem[]>('', { params: { type } });
+  return data;
+}
+
+export async function getEntry(uri: string, type: string): Promise<EntryData> {
+  const { data } = await api.get<EntryData>('/entry', { params: { type, uri } });
+  return data;
+}
+
+export async function updateEntry(
+  uri: string,
+  req: SubmitApplicationRequest,
+  type: string,
+): Promise<void> {
+  await api.put('/entry', req, { params: { type, uri } });
+}

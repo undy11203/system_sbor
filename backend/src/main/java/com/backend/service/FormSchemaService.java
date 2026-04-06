@@ -3,6 +3,8 @@ package com.backend.service;
 import com.backend.dto.FormFieldSpec;
 import com.backend.dto.FormSchema;
 import com.backend.dto.FormSection;
+import com.backend.entity.FormSchemaRecord;
+import com.backend.repository.FormSchemaRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import jakarta.annotation.PostConstruct;
@@ -10,19 +12,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Loads form schemas from YAML files at startup,
- * expands local property names to full OWL URIs, and caches the results.
- *
- * Schema types:
- *   "student"       → form-schema.yaml
- *   "supervisor-ngu" → supervisor-ngu-schema.yaml
+ * Loads form schemas from the database.
+ * On first startup, seeds the DB from YAML files if the table is empty.
  */
 @Service
 public class FormSchemaService {
@@ -34,32 +32,48 @@ public class FormSchemaService {
         "supervisor-ngu", "supervisor-ngu-schema.yaml"
     );
 
-    private final Map<String, FormSchema> schemas = new LinkedHashMap<>();
+    private final FormSchemaRepository schemaRepo;
+    private final ObjectMapper jsonMapper;
+
+    public FormSchemaService(FormSchemaRepository schemaRepo) {
+        this.schemaRepo = schemaRepo;
+        this.jsonMapper = new ObjectMapper();
+        this.jsonMapper.findAndRegisterModules();
+    }
 
     @PostConstruct
+    @Transactional
     public void init() throws IOException {
-        ObjectMapper mapper = new ObjectMapper(new YAMLFactory());
-        mapper.findAndRegisterModules();
+        ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+        yamlMapper.findAndRegisterModules();
 
         for (Map.Entry<String, String> entry : SCHEMA_FILES.entrySet()) {
             String type = entry.getKey();
             String file = entry.getValue();
-            FormSchema schema = load(mapper, file);
-            schemas.put(type, schema);
-            int fieldCount = schema.getSections().stream()
-                    .mapToInt(s -> s.getFields().size()).sum();
-            log.info("Schema '{}' loaded from {}: {} sections, {} fields",
-                    type, file, schema.getSections().size(), fieldCount);
+
+            if (schemaRepo.existsById(type)) {
+                log.info("Schema '{}' already in DB, skipping seed", type);
+                continue;
+            }
+
+            FormSchema schema = loadFromYaml(yamlMapper, file);
+            expandUris(schema);
+            String json = jsonMapper.writeValueAsString(schema);
+            schemaRepo.save(new FormSchemaRecord(type, json));
+            log.info("Schema '{}' seeded from {}", type, file);
         }
     }
 
     /** Returns schema for the given type. Throws if type is unknown. */
+    @Transactional(readOnly = true)
     public FormSchema getSchema(String type) {
-        FormSchema schema = schemas.get(type);
-        if (schema == null) {
-            throw new IllegalArgumentException("Unknown schema type: " + type);
+        FormSchemaRecord record = schemaRepo.findById(type)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown schema type: " + type));
+        try {
+            return jsonMapper.readValue(record.getSchemaJson(), FormSchema.class);
+        } catch (IOException e) {
+            throw new IllegalStateException("Failed to deserialize schema: " + type, e);
         }
-        return schema;
     }
 
     /** Convenience method for the default student schema. */
@@ -67,16 +81,31 @@ public class FormSchemaService {
         return getSchema("student");
     }
 
-    private FormSchema load(ObjectMapper mapper, String file) throws IOException {
+    /** Updates schema in DB (allows editing schema at runtime without redeploy). */
+    @Transactional
+    public void saveSchema(String type, FormSchema schema) throws IOException {
+        expandUris(schema);
+        String json = jsonMapper.writeValueAsString(schema);
+        FormSchemaRecord record = schemaRepo.findById(type)
+                .orElse(new FormSchemaRecord(type, json));
+        record.setSchemaJson(json);
+        schemaRepo.save(record);
+        log.info("Schema '{}' updated in DB", type);
+    }
+
+    private FormSchema loadFromYaml(ObjectMapper yamlMapper, String file) throws IOException {
         ClassPathResource resource = new ClassPathResource(file);
-        FormSchema schema;
         try (InputStream is = resource.getInputStream()) {
-            schema = mapper.readValue(is, FormSchema.class);
+            FormSchema schema = yamlMapper.readValue(is, FormSchema.class);
+            if (schema.getNamespace() == null || schema.getNamespace().isBlank()) {
+                throw new IllegalStateException(file + ": 'namespace' field is required");
+            }
+            return schema;
         }
+    }
+
+    private void expandUris(FormSchema schema) {
         String ns = schema.getNamespace();
-        if (ns == null || ns.isBlank()) {
-            throw new IllegalStateException(file + ": 'namespace' field is required");
-        }
         for (FormSection section : schema.getSections()) {
             for (FormFieldSpec field : section.getFields()) {
                 field.setPropUri(expand(ns, field.getProp()));
@@ -85,7 +114,6 @@ public class FormSchemaService {
                 }
             }
         }
-        return schema;
     }
 
     private static String expand(String ns, String localName) {

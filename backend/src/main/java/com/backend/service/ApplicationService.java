@@ -2,6 +2,7 @@ package com.backend.service;
 
 import com.backend.dto.ApplicationSubmitRequest;
 import com.backend.dto.ApplicationSubmitResponse;
+import com.backend.dto.EntryData;
 import com.backend.dto.FormFieldSpec;
 import com.backend.dto.FormSection;
 import org.apache.jena.sparql.exec.http.UpdateExecHTTP;
@@ -31,18 +32,136 @@ public class ApplicationService {
     private String ns;
 
     private final FormSchemaService formSchemaService;
+    private final OntologyService ontologyService;
     private final DocumentFillService documentFillService;
     private final EmailService emailService;
     private final TaskScheduler taskScheduler;
 
     public ApplicationService(FormSchemaService formSchemaService,
+                               OntologyService ontologyService,
                                DocumentFillService documentFillService,
                                EmailService emailService,
                                TaskScheduler taskScheduler) {
         this.formSchemaService = formSchemaService;
+        this.ontologyService = ontologyService;
         this.documentFillService = documentFillService;
         this.emailService = emailService;
         this.taskScheduler = taskScheduler;
+    }
+
+    /** Returns all individuals of the entity class defined by the schema, with their main name. */
+    public java.util.List<java.util.Map<String, String>> listEntries(String schemaType) {
+        var schema = formSchemaService.getSchema(schemaType);
+        String fioUri = ns + "ФИО";
+
+        if ("student".equals(schemaType)) {
+            return ontologyService.listStudents(ns,
+                    java.util.List.of("Бакалавриат", "Магистратура"), fioUri);
+        }
+
+        String classUri = ns + classForSchema(schemaType);
+        String mainNamePropUri = schema.getSections().stream()
+                .flatMap(s -> s.getFields().stream())
+                .filter(FormFieldSpec::isMainName)
+                .map(FormFieldSpec::getPropUri)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Schema " + schemaType + " has no mainName field"));
+        return ontologyService.listIndividuals(classUri, mainNamePropUri);
+    }
+
+    /**
+     * Returns current property values and display labels for the given individual.
+     * values: propUri → literal or object URI (used for submission)
+     * labels: propUri → human-readable name (only for object fields, used for display)
+     */
+    public EntryData getEntry(String individualUri, String schemaType) {
+        var schema = formSchemaService.getSchema(schemaType);
+        java.util.Map<String, String> values = new java.util.LinkedHashMap<>();
+        java.util.Map<String, String> labels = new java.util.LinkedHashMap<>();
+        String fioUri = ns + "ФИО";
+
+        for (FormSection section : schema.getSections()) {
+            for (FormFieldSpec field : section.getFields()) {
+                if ("datatype".equals(field.getType())) {
+                    String val = ontologyService.getLiteralValue(individualUri, field.getPropUri());
+                    if (val != null) values.put(field.getPropUri(), val);
+                } else {
+                    String objUri = ontologyService.getObjectValue(
+                            individualUri, field.getPropUri(), field.isReversed());
+                    if (objUri != null) {
+                        values.put(field.getPropUri(), objUri);
+                        String label = ontologyService.getLiteralValue(objUri, fioUri);
+                        if (label != null) labels.put(field.getPropUri(), label);
+                    }
+                }
+            }
+        }
+        return new EntryData(values, labels);
+    }
+
+    /**
+     * Replaces all property values for an existing individual (datatype + object fields).
+     * Uses SPARQL DELETE { } WHERE { } ; INSERT DATA { } to overwrite old values.
+     */
+    public void updateEntry(String individualUri, ApplicationSubmitRequest req, String schemaType) {
+        var schema = formSchemaService.getSchema(schemaType);
+        java.util.List<FormFieldSpec> allFields = schema.getSections().stream()
+                .flatMap(s -> s.getFields().stream())
+                .toList();
+
+        StringBuilder deletePatterns = new StringBuilder();
+        StringBuilder optionals = new StringBuilder();
+        StringBuilder insertData = new StringBuilder();
+        int i = 0;
+
+        for (FormFieldSpec field : allFields) {
+            String alias = "?v" + i++;
+            String val = req.getValues().get(field.getPropUri());
+
+            if ("datatype".equals(field.getType())) {
+                deletePatterns.append("  <").append(individualUri).append("> <")
+                        .append(field.getPropUri()).append("> ").append(alias).append(" .\n");
+                optionals.append("  OPTIONAL { <").append(individualUri).append("> <")
+                        .append(field.getPropUri()).append("> ").append(alias).append(" }\n");
+                if (val != null && !val.isBlank()) {
+                    appendLiteral(insertData, individualUri, field.getPropUri(), val);
+                }
+            } else {
+                // object field — triple direction depends on reversed flag
+                if (field.isReversed()) {
+                    deletePatterns.append("  ").append(alias).append(" <")
+                            .append(field.getPropUri()).append("> <").append(individualUri).append("> .\n");
+                    optionals.append("  OPTIONAL { ").append(alias).append(" <")
+                            .append(field.getPropUri()).append("> <").append(individualUri).append("> }\n");
+                    if (val != null && !val.isBlank()) {
+                        appendUri(insertData, val, field.getPropUri(), individualUri);
+                    }
+                } else {
+                    deletePatterns.append("  <").append(individualUri).append("> <")
+                            .append(field.getPropUri()).append("> ").append(alias).append(" .\n");
+                    optionals.append("  OPTIONAL { <").append(individualUri).append("> <")
+                            .append(field.getPropUri()).append("> ").append(alias).append(" }\n");
+                    if (val != null && !val.isBlank()) {
+                        appendUri(insertData, individualUri, field.getPropUri(), val);
+                    }
+                }
+            }
+        }
+
+        String sparql = "DELETE {\n" + deletePatterns + "}\nWHERE {\n" + optionals + "} ;\n"
+                + "INSERT DATA {\n" + insertData + "}";
+        log.debug("SPARQL UPDATE (update):\n{}", sparql);
+
+        UpdateRequest update = UpdateFactory.create(sparql);
+        UpdateExecHTTP.newBuilder().endpoint(updateEndpoint).update(update).build().execute();
+        log.info("Entry updated: uri={}", individualUri);
+    }
+
+    private String classForSchema(String schemaType) {
+        return switch (schemaType) {
+            case "supervisor-ngu" -> "Руководитель_от_НГУ";
+            default -> throw new IllegalArgumentException("listEntries not supported for schema: " + schemaType);
+        };
     }
 
     /**
