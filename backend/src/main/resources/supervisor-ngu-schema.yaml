@@ -18,3 +18,10 @@ sections:
         label: "Должность в НГУ"
         required: false
         hint: "Например: доцент, ст. преп."
+
+      - prop: "Электронная_почта"
+        entity: supervisor
+        type: datatype
+        label: "Электронная почта"
+        required: false
+        hint: "example@nsu.ru"

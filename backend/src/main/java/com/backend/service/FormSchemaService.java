@@ -51,16 +51,14 @@ public class FormSchemaService {
             String type = entry.getKey();
             String file = entry.getValue();
 
-            if (schemaRepo.existsById(type)) {
-                log.info("Schema '{}' already in DB, skipping seed", type);
-                continue;
-            }
-
             FormSchema schema = loadFromYaml(yamlMapper, file);
             expandUris(schema);
             String json = jsonMapper.writeValueAsString(schema);
-            schemaRepo.save(new FormSchemaRecord(type, json));
-            log.info("Schema '{}' seeded from {}", type, file);
+            FormSchemaRecord record = schemaRepo.findById(type)
+                    .orElse(new FormSchemaRecord(type, json));
+            record.setSchemaJson(json);
+            schemaRepo.save(record);
+            log.info("Schema '{}' synced from {}", type, file);
         }
     }
 
@@ -79,6 +77,15 @@ public class FormSchemaService {
     /** Convenience method for the default student schema. */
     public FormSchema getSchema() {
         return getSchema("student");
+    }
+
+    /** Returns all known schema type keys stored in the DB. */
+    @Transactional(readOnly = true)
+    public java.util.List<String> listTypes() {
+        return schemaRepo.findAll().stream()
+                .map(FormSchemaRecord::getType)
+                .sorted()
+                .toList();
     }
 
     /** Updates schema in DB (allows editing schema at runtime without redeploy). */

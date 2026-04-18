@@ -55,3 +55,12 @@ export async function updateEntry(
 ): Promise<void> {
   await api.put('/entry', req, { params: { type, uri } });
 }
+
+export async function markReceived(uri: string): Promise<void> {
+  await api.post('/receive', null, { params: { uri } });
+}
+
+export async function getSubmissionStatus(uri: string): Promise<string> {
+  const { data } = await api.get<{ status: string }>('/status', { params: { uri } });
+  return data.status;
+}

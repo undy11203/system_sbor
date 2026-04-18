@@ -3,6 +3,8 @@ package com.backend.controller;
 import com.backend.dto.ApplicationSubmitRequest;
 import com.backend.dto.ApplicationSubmitResponse;
 import com.backend.dto.EntryData;
+import com.backend.entity.StudentSubmission;
+import com.backend.repository.StudentSubmissionRepository;
 import com.backend.service.ApplicationService;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
@@ -20,9 +22,12 @@ import java.util.Map;
 public class ApplicationController {
 
     private final ApplicationService applicationService;
+    private final StudentSubmissionRepository submissionRepo;
 
-    public ApplicationController(ApplicationService applicationService) {
+    public ApplicationController(ApplicationService applicationService,
+                                  StudentSubmissionRepository submissionRepo) {
         this.applicationService = applicationService;
+        this.submissionRepo = submissionRepo;
     }
 
     @PostMapping
@@ -56,5 +61,23 @@ public class ApplicationController {
             @Valid @RequestBody ApplicationSubmitRequest req) {
         applicationService.updateEntry(uri, req, type);
         return ResponseEntity.ok().build();
+    }
+
+    /** POST /api/applications/receive?uri=... — secretary marks paper application as received. */
+    @PostMapping("/receive")
+    public ResponseEntity<Void> markReceived(@RequestParam String uri) {
+        submissionRepo.findById(uri).ifPresent(sub -> {
+            sub.markReceived();
+            submissionRepo.save(sub);
+        });
+        return ResponseEntity.ok().build();
+    }
+
+    /** GET /api/applications/status?uri=... — get submission status for a student. */
+    @GetMapping("/status")
+    public ResponseEntity<Map<String, String>> getStatus(@RequestParam String uri) {
+        return submissionRepo.findById(uri)
+                .map(sub -> ResponseEntity.ok(Map.of("status", sub.getStatus().name())))
+                .orElse(ResponseEntity.ok(Map.of("status", "UNKNOWN")));
     }
 }

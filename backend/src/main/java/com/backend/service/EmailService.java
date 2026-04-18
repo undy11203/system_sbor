@@ -51,16 +51,18 @@ public class EmailService {
     /**
      * Отправляет напоминание студенту.
      */
-    public void sendReminder(String to) {
+    public void sendReminder(String to, int attempt) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(to);
-        message.setSubject("Напоминание — документы для практики");
+        message.setSubject("Напоминание #%d — документы для практики".formatted(attempt));
         message.setText("""
                 Здравствуйте!
 
-                Напоминаем: вы подали заявку на прохождение практики.
-                Пожалуйста, проверьте полученные документы и при необходимости обратитесь на кафедру.
-                """);
+                Напоминание #%d: вы подали заявку на прохождение практики, но бумажное заявление ещё не поступило на кафедру.
+                Пожалуйста, принесите подписанное заявление на кафедру.
+
+                Если вы уже сдали документы — проигнорируйте это письмо.
+                """.formatted(attempt));
         mailSender.send(message);
     }
 }
