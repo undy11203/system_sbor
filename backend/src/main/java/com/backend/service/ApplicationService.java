@@ -5,6 +5,8 @@ import com.backend.dto.ApplicationSubmitResponse;
 import com.backend.dto.EntryData;
 import com.backend.dto.FormFieldSpec;
 import com.backend.dto.FormSection;
+import com.backend.entity.StudentSubmission;
+import com.backend.repository.StudentSubmissionRepository;
 import org.apache.jena.sparql.exec.http.UpdateExecHTTP;
 import org.apache.jena.update.UpdateFactory;
 import org.apache.jena.update.UpdateRequest;
@@ -36,17 +38,20 @@ public class ApplicationService {
     private final DocumentFillService documentFillService;
     private final EmailService emailService;
     private final TaskScheduler taskScheduler;
+    private final StudentSubmissionRepository submissionRepo;
 
     public ApplicationService(FormSchemaService formSchemaService,
                                OntologyService ontologyService,
                                DocumentFillService documentFillService,
                                EmailService emailService,
-                               TaskScheduler taskScheduler) {
+                               TaskScheduler taskScheduler,
+                               StudentSubmissionRepository submissionRepo) {
         this.formSchemaService = formSchemaService;
         this.ontologyService = ontologyService;
         this.documentFillService = documentFillService;
         this.emailService = emailService;
         this.taskScheduler = taskScheduler;
+        this.submissionRepo = submissionRepo;
     }
 
     /** Returns all individuals of the entity class defined by the schema, with their main name. */
@@ -231,6 +236,9 @@ public class ApplicationService {
             return new ApplicationSubmitResponse(studentUri, "SUBMITTED");
         }
 
+        // Save submission record in DB
+        submissionRepo.save(new StudentSubmission(studentUri, studentEmail));
+
         // Generate documents and email them to the student
         final String finalStudentUri = studentUri;
         try {
@@ -241,20 +249,32 @@ public class ApplicationService {
             log.error("Failed to generate/send documents for {}: {}", finalStudentUri, e.getMessage(), e);
         }
 
-        // Schedule reminder in 30 minutes
-        taskScheduler.schedule(
-            () -> {
-                try {
-                    emailService.sendReminder(studentEmail);
-                    log.info("Reminder sent to {}", studentEmail);
-                } catch (Exception e) {
-                    log.error("Reminder failed for {}: {}", studentEmail, e.getMessage(), e);
-                }
-            },
-            Instant.now().plusSeconds(30 * 60)
-        );
+        // Schedule reminders every 3 days, stop when status becomes RECEIVED
+        scheduleReminders(studentUri, studentEmail, 1);
 
         return new ApplicationSubmitResponse(studentUri, "SUBMITTED");
+    }
+
+    private static final int MAX_REMINDERS = 5;
+    private static final long REMINDER_INTERVAL_DAYS = 3;
+
+    private void scheduleReminders(String studentUri, String email, int attempt) {
+        if (attempt > MAX_REMINDERS) return;
+        taskScheduler.schedule(() -> {
+            submissionRepo.findById(studentUri).ifPresent(sub -> {
+                if (sub.getStatus() == StudentSubmission.Status.RECEIVED) {
+                    log.info("Reminder skipped — already received: {}", studentUri);
+                    return;
+                }
+                try {
+                    emailService.sendReminder(email, attempt);
+                    log.info("Reminder #{} sent to {}", attempt, email);
+                } catch (Exception e) {
+                    log.error("Reminder #{} failed for {}: {}", attempt, email, e.getMessage());
+                }
+                scheduleReminders(studentUri, email, attempt + 1);
+            });
+        }, Instant.now().plusSeconds(REMINDER_INTERVAL_DAYS * 24 * 3600));
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

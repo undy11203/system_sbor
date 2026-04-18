@@ -34,3 +34,12 @@ export async function getFormSchema(type = 'student'): Promise<FormSchema> {
   const { data } = await api.get<FormSchema>('/schema', { params: { type } });
   return data;
 }
+
+export async function listSchemaTypes(): Promise<string[]> {
+  const { data } = await api.get<string[]>('/types');
+  return data;
+}
+
+export async function saveFormSchema(type: string, schema: FormSchema): Promise<void> {
+  await api.put('/schema', schema, { params: { type } });
+}
