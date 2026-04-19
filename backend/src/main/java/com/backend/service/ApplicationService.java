@@ -239,12 +239,25 @@ public class ApplicationService {
         // Save submission record in DB
         submissionRepo.save(new StudentSubmission(studentUri, studentEmail));
 
-        // Generate documents and email them to the student
+        // Generate documents, email to student and supervisor
         final String finalStudentUri = studentUri;
         try {
-            byte[] zip = documentFillService.generateZipViaHelper(finalStudentUri);
+            byte[] zip = documentFillService.generateZip(finalStudentUri);
+
+            // Send to student
             emailService.sendDocuments(studentEmail, zip);
-            log.info("Documents sent to {}", studentEmail);
+            log.info("Documents sent to student {}", studentEmail);
+
+            // Send to NGU supervisor if they have an email
+            Map<String, String> studentVars = documentFillService.fetchStudentVars(finalStudentUri);
+            String supervisorEmail = studentVars.getOrDefault("на_НГУ_практике_у/Электронная_почта", "");
+            String studentName = studentVars.getOrDefault("ФИО", finalStudentUri);
+            if (!supervisorEmail.isBlank()) {
+                emailService.sendDocumentsToSupervisor(supervisorEmail, studentName, zip);
+                log.info("Documents sent to supervisor {}", supervisorEmail);
+            } else {
+                log.info("Supervisor email not set for student {}, skipping supervisor notification", finalStudentUri);
+            }
         } catch (Exception e) {
             log.error("Failed to generate/send documents for {}: {}", finalStudentUri, e.getMessage(), e);
         }

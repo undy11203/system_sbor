@@ -5,14 +5,12 @@ import com.github.petrovich4j.Gender;
 import com.github.petrovich4j.NameType;
 import com.github.petrovich4j.Petrovich;
 import org.apache.jena.query.*;
-import org.apache.jena.rdf.model.RDFNode;
 import org.apache.jena.sparql.exec.http.QueryExecutionHTTP;
 import org.apache.poi.xwpf.usermodel.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import ru.nsu.fit.chernyavtseva.assistant.DocumentService;
 
 import java.io.*;
 import java.util.*;
@@ -21,11 +19,8 @@ import java.util.zip.ZipOutputStream;
 
 /**
  * Fetches student data from Fuseki and fills DOCX templates using Apache POI.
- *
- * Template placeholders (e.g. "имяСтудентаР") are mapped from ontology
- * variable names (e.g. "фио_студента") using the same conventions as hepler.
- *
- * Returns a ZIP containing all filled templates for the student.
+ * All templates are stored in backend/src/main/resources/templates/.
+ * No external library dependency for generation.
  */
 @Service
 public class DocumentFillService {
@@ -33,6 +28,37 @@ public class DocumentFillService {
     private static final Logger log = LoggerFactory.getLogger(DocumentFillService.class);
 
     private static final String NS = "http://www.semanticweb.org/oleyn/ontologies/2022/4/кафедра#";
+
+    // ── Template registry: degree dir → list of template filenames ────────────
+    private static final Map<String, List<String>> TEMPLATE_REGISTRY = Map.of(
+        "bachelors/4th_course", List.of(
+            "Прил 1_ИЗ на практику_Бакалавриат_ПИиКН_8 семестр.docx",
+            "Прил 2_Отчет о практике_Бакалавриат_ПииКН_8 семестр.docx",
+            "Прил 3_Отзыв руководителя практики_Бакалавриат_ПИиКН_8 семестр.docx",
+            "Прил 4_Заявление на практику_Бакалавриат_ПИиКН_8 семестр.docx",
+            "09.03.01_PliKN_VKR_otzyv.docx",
+            "09.03.01_PIiKN_VKR_otzyv_2.docx",
+            "09.03.01_PIiKN_VKR_recenziya.docx"
+        ),
+        "masters/2nd_course/mda", List.of(
+            "Прил 1_ИЗ на практику_Магистратура_КМиАД_4 сем.docx",
+            "Прил 2_Отчет о практике_Магистратура_КМиАД_4 сем.docx",
+            "Прил 3_Отзыв руководителя_Магистратура_КМиАД_4 сем.docx",
+            "Прил 4_Заявление на практику_Магистратура_КМиАД_4 сем.docx",
+            "09.04.01_KMiAD_VKR_otzyv.docx",
+            "09.04.01_KMiAD_VKR_otzyv_2.docx",
+            "09.04.01_KMiAD_VKR_recenziya.docx"
+        ),
+        "masters/2nd_course/tprs", List.of(
+            "Прил 1_ИЗ на практику_Магистратура_ТРПС_4 сем.docx",
+            "Прил 2_Отчет о практике_Магистратура_ТРПС_4 сем.docx",
+            "Прил 3_Отзыв руководителя практики_Магистратура_ТРПС_4 сем.docx",
+            "Прил 4_Заявление на практику_Магистратура_ТРПС_4 сем.docx",
+            "09.04.01_TRPS_VKR_otzyv.docx",
+            "09.04.01_TRPS_VKR_otzyv_2.docx",
+            "09.04.01_TRPS_VKR_recenziya.docx"
+        )
+    );
 
     @Value("${fuseki.sparql.endpoint}")
     private String sparqlEndpoint;
@@ -42,44 +68,7 @@ public class DocumentFillService {
     // ── public API ────────────────────────────────────────────────────────────
 
     /**
-     * Alternative generation via hepler's DocumentGenerator.
-     * Fetches student data from Fuseki, wraps it in a Jena 2.x QuerySolutionMap,
-     * and calls DocumentGenerator.generate() which fills templates and writes them
-     * to the classpath documents directory. Files are then packed into a ZIP.
-     */
-    public byte[] generateZipViaHelper(String studentUri) throws IOException {
-        log.info("[helper] generateZipViaHelper start, uri={}", studentUri);
-
-        Map<String, String> vars = fetchStudentVars(studentUri);
-        log.info("[helper] fetchStudentVars returned {} keys: {}", vars.size(), vars.keySet());
-        if (vars.isEmpty()) {
-            throw new IllegalArgumentException("Student not found or has no data: " + studentUri);
-        }
-
-        String degreeClass = fetchDegreeClass(studentUri);
-        String degreeDir = resolveTemplateDir(degreeClass, vars.getOrDefault("профиль", ""));
-        log.info("[helper] degreeClass={}, degreeDir={}", degreeClass, degreeDir);
-
-        Map<String, byte[]> docs = DocumentService.generateForStudent(degreeDir, vars);
-        log.info("[helper] DocumentService returned {} documents: {}", docs.size(), docs.keySet());
-
-        ByteArrayOutputStream zipBuffer = new ByteArrayOutputStream();
-        try (ZipOutputStream zos = new ZipOutputStream(zipBuffer)) {
-            for (Map.Entry<String, byte[]> entry : docs.entrySet()) {
-                log.debug("[helper] packing: {}", entry.getKey());
-                zos.putNextEntry(new ZipEntry(entry.getKey()));
-                zos.write(entry.getValue());
-                zos.closeEntry();
-            }
-        }
-        log.info("[helper] zip built, size={}", zipBuffer.size());
-        return zipBuffer.toByteArray();
-    }
-
-    
-    /**
-     * Generates all applicable templates for the given student URI.
-     * Returns a ZIP archive as byte[].
+     * Generates all templates for the student, returns a ZIP archive.
      */
     public byte[] generateZip(String studentUri) throws IOException {
         Map<String, String> vars = fetchStudentVars(studentUri);
@@ -88,80 +77,107 @@ public class DocumentFillService {
         }
 
         String degreeClass = fetchDegreeClass(studentUri);
-        String templateDir = resolveTemplateDir(degreeClass, vars.getOrDefault("профиль", ""));
+        String templateDir = resolveTemplateDir(degreeClass, vars.getOrDefault("Профиль_обучения", ""));
+        log.info("Student vars fetched: {}", vars);
+        Map<String, String> placeholders = buildReplacements(vars);
+        log.info("Placeholders keys: {}", placeholders.keySet());
 
-        Map<String, String> placeholders = buildPlaceholders(vars);
-        log.debug("Placeholders built: {}", placeholders.keySet());
-
+        List<String> templates = TEMPLATE_REGISTRY.getOrDefault(templateDir, List.of());
         ByteArrayOutputStream zipBuffer = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(zipBuffer)) {
-            fillTemplateDir(templateDir, placeholders, zos);
+            for (String filename : templates) {
+                String resourcePath = "/templates/" + templateDir + "/" + filename;
+                try (InputStream is = getClass().getResourceAsStream(resourcePath)) {
+                    if (is == null) {
+                        log.warn("Template not found on classpath: {}", resourcePath);
+                        continue;
+                    }
+                    byte[] filled = fillDocx(is, placeholders);
+                    String studentPrefix = vars.getOrDefault("ФИО", "").replace(" ", "_");
+                    String outName = studentPrefix.isBlank() ? filename : studentPrefix + "_" + filename;
+                    zos.putNextEntry(new ZipEntry(outName));
+                    zos.write(filled);
+                    zos.closeEntry();
+                    log.debug("Filled template: {}", outName);
+                }
+            }
         }
+        log.info("ZIP built for uri={}, {} templates, size={}", studentUri, templates.size(), zipBuffer.size());
         return zipBuffer.toByteArray();
+    }
+
+    /**
+     * Returns the NGU supervisor email from fetched vars, or empty string if not set.
+     */
+    public String getSupervisorEmail(String studentUri) {
+        Map<String, String> vars = fetchStudentVars(studentUri);
+        return vars.getOrDefault("на_НГУ_практике_у/Электронная_почта", "");
     }
 
     // ── SPARQL data fetching ──────────────────────────────────────────────────
 
     /**
-     * Runs the full StudentQuery (adapted from hepler) for the given student URI.
-     * Returns variable_name → string_value map.
+     * Fetches all data for the student using two generic SPARQL queries.
+     *
+     * Result keys:
+     *   Direct literals  → local property name, e.g. "ФИО", "группа"
+     *   2-hop literals   → "objectProp/relProp",  e.g. "на_НГУ_практике_у/ФИО"
+     *
+     * Adding a new field to the form schema automatically makes it available here
+     * without any backend changes.
      */
-    private Map<String, String> fetchStudentVars(String studentUri) {
-        String query = """
-            PREFIX my: <%s>
-            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            SELECT * WHERE {
-                <%s> my:ФИО ?фио_студента .
-                OPTIONAL { <%s> my:группа ?группа_студента . }
-                OPTIONAL { <%s> my:Место_прохождения_практики ?место_практики . }
-                OPTIONAL { <%s> my:Приказ_на_прохождение_практики ?приказ_практика . }
-                OPTIONAL { <%s> my:Место_практики_полное_наименование ?место_практики_полное_наименование . }
-                OPTIONAL { <%s> my:Наименование_организации ?наименование_организации . }
-                OPTIONAL { <%s> my:Профиль_обучения ?профиль . }
-
-                OPTIONAL {
-                    <%s> my:на_НГУ_практике_у ?нгу_рук .
-                    ?нгу_рук my:ФИО ?фио_НГУ_руководителя .
-                    OPTIONAL { ?нгу_рук my:Должность_в_НГУ ?должность_НГУ_руководителя . }
-                }
-                OPTIONAL {
-                    <%s> my:на_орг_практике_у ?орг_рук .
-                    ?орг_рук my:ФИО ?фио_орг_руководителя .
-                    OPTIONAL { ?орг_рук my:Должность_в_организации ?должность_орг_руководителя . }
-                    OPTIONAL { ?орг_рук my:ФИО_для_подписи ?фио_подпись . }
-                    OPTIONAL { ?орг_рук my:ДатаБакРук ?бак_дата_рук . }
-                    OPTIONAL { ?орг_рук my:ДатаМагМДА ?маг_дата_рук_мда . }
-                    OPTIONAL { ?орг_рук my:ДатаМагТРПС ?маг_дата_рук_трпс . }
-                }
-            }
-            """.formatted(NS,
-                studentUri, studentUri, studentUri, studentUri,
-                studentUri, studentUri, studentUri, studentUri,
-                studentUri);
-
+    public Map<String, String> fetchStudentVars(String studentUri) {
         Map<String, String> vars = new LinkedHashMap<>();
+
+        // Query 1: all direct literal properties
+        String q1 = "SELECT ?p ?v WHERE { <" + studentUri + "> ?p ?v . FILTER(isLiteral(?v)) }";
         try (QueryExecution qe = QueryExecutionHTTP.newBuilder()
-                .endpoint(sparqlEndpoint).query(query).build()) {
+                .endpoint(sparqlEndpoint).query(q1).build()) {
             ResultSet rs = qe.execSelect();
-            if (rs.hasNext()) {
+            while (rs.hasNext()) {
                 QuerySolution sol = rs.nextSolution();
-                for (String varName : rs.getResultVars()) {
-                    RDFNode node = sol.get(varName);
-                    if (node != null && node.isLiteral()) {
-                        vars.put(varName, node.asLiteral().getString());
-                    }
-                }
+                vars.put(localName(sol.getResource("p").getURI()),
+                         sol.getLiteral("v").getString());
             }
         } catch (Exception e) {
-            log.error("Failed to fetch student data for {}: {}", studentUri, e.getMessage());
+            log.error("Failed to fetch direct properties for {}: {}", studentUri, e.getMessage());
         }
+
+        // Query 2: all 2-hop literal properties via object relations
+        String q2 = """
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX owl: <http://www.w3.org/2002/07/owl#>
+            SELECT ?op ?rp ?v WHERE {
+                <%s> ?op ?rel .
+                ?rel ?rp ?v .
+                FILTER(isLiteral(?v))
+                FILTER(?op != rdf:type && ?op != owl:sameAs)
+            }""".formatted(studentUri);
+        try (QueryExecution qe = QueryExecutionHTTP.newBuilder()
+                .endpoint(sparqlEndpoint).query(q2).build()) {
+            ResultSet rs = qe.execSelect();
+            while (rs.hasNext()) {
+                QuerySolution sol = rs.nextSolution();
+                String key = localName(sol.getResource("op").getURI())
+                           + "/" + localName(sol.getResource("rp").getURI());
+                vars.put(key, sol.getLiteral("v").getString());
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch related properties for {}: {}", studentUri, e.getMessage());
+        }
+
         return vars;
+    }
+
+    private static String localName(String uri) {
+        int i = Math.max(uri.lastIndexOf('#'), uri.lastIndexOf('/'));
+        return uri.substring(i + 1);
     }
 
     private String fetchDegreeClass(String studentUri) {
         String query = """
-            PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
-            PREFIX owl:  <http://www.w3.org/2002/07/owl#>
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX owl: <http://www.w3.org/2002/07/owl#>
             SELECT ?cls WHERE {
                 <%s> rdf:type ?cls .
                 FILTER(?cls != owl:NamedIndividual)
@@ -173,9 +189,7 @@ public class DocumentFillService {
             while (rs.hasNext()) {
                 String uri = rs.nextSolution().getResource("cls").getURI();
                 String local = uri.substring(uri.lastIndexOf('#') + 1);
-                if (local.equals("Бакалавриат") || local.equals("Магистратура")) {
-                    return local;
-                }
+                if (local.equals("Бакалавриат") || local.equals("Магистратура")) return local;
             }
         } catch (Exception e) {
             log.warn("Could not determine degree class for {}: {}", studentUri, e.getMessage());
@@ -183,75 +197,53 @@ public class DocumentFillService {
         return "Бакалавриат";
     }
 
-    // ── template directory resolution ─────────────────────────────────────────
-
     private String resolveTemplateDir(String degreeClass, String profile) {
-        if ("Бакалавриат".equals(degreeClass)) {
-            return "bachelors/4th_course";
-        }
-        // Master: distinguish by profile
+        if ("Бакалавриат".equals(degreeClass)) return "bachelors/4th_course";
         String p = profile.toLowerCase();
-        if (p.contains("модел") || p.contains("мда") || p.contains("кмиад")) {
-            return "masters/2nd_course/mda";
-        }
+        if (p.contains("модел") || p.contains("мда") || p.contains("кмиад")) return "masters/2nd_course/mda";
         return "masters/2nd_course/tprs";
     }
 
-    // ── placeholder building ──────────────────────────────────────────────────
+    // ── placeholder map ───────────────────────────────────────────────────────
 
     /**
-     * Maps variable values from Fuseki to template placeholder strings,
-     * applying Petrovich declension and gender detection as needed.
-     * Mirrors the DOC_FIELD_TO_SOLUTION maps in hepler template classes.
+     * Builds replacement map from SPARQL result vars using "varname:transform" format.
+     *
+     * Each var produces:
+     *   "varname:"        → plain value
+     *   "varname:род"     → genitive declension  (fields starting with "фио")
+     *   "varname:обучРод" → "Обучающегося/ей"    (fields starting with "фио")
+     *   "varname:обучИм"  → "Обучающийся/аяся"   (fields starting with "фио")
+     *   "varname:форма"   → "студенту/студентке"  (fields starting with "фио")
+     *
+     * DOCX templates must use these placeholders (e.g. фио_студента:род).
      */
-    private Map<String, String> buildPlaceholders(Map<String, String> vars) {
-        Map<String, String> p = new LinkedHashMap<>();
+    private Map<String, String> buildReplacements(Map<String, String> vars) {
+        // Sort longest keys first so "ФИО:обучРод" is replaced before "ФИО:"
+        Map<String, String> p = new TreeMap<>(
+                Comparator.comparingInt(String::length).reversed().thenComparing(Comparator.naturalOrder()));
+        for (Map.Entry<String, String> e : vars.entrySet()) {
+            String var = e.getKey();
+            String val = e.getValue();
+            if (val == null || val.isBlank()) continue;
 
-        // Student FIO: именительный (Отзыв), родительный (Заявление, Отчёт), гендерные формы
-        String fio = vars.get("фио_студента");
-        if (fio != null) {
-            p.put("имяСтудентаИ",     fio);
-            p.put("имяСтудентаР",     declineFio(fio, Case.Genitive));
-            p.put("обучСтудОбрПадеж", genderObuchRod(fio));  // "Обучающегося/ейся"
-            p.put("обучФиоИм",        genderObuchIm(fio));   // "Обучающийся/аяся"
+            p.put(var + ":", val);
+
+            if (var.equals("ФИО") || var.endsWith("/ФИО")) {
+                p.put(var + ":род",     declineFio(val, Case.Genitive));
+                p.put(var + ":обучРод", genderObuchRod(val));
+                p.put(var + ":обучИм",  genderObuchIm(val));
+                p.put(var + ":форма",   genderForm(val));
+            }
         }
-
-        ifPresent(vars, "группа_студента",                    p, "группаСтудента");
-        ifPresent(vars, "место_практики",                     p, "местоПрактики");
-        ifPresent(vars, "место_практики_полное_наименование", p, "полноеНаименованиеМестаПрактики");
-        ifPresent(vars, "наименование_организации",           p, "наименованиеОрганизации");
-
-        // NGU supervisor (Отчёт о практике)
-        ifPresent(vars, "фио_НГУ_руководителя",       p, "имяРуководителяОтНГУ");
-        ifPresent(vars, "должность_НГУ_руководителя", p, "должностьВНГУ");
-
-        // Org supervisor (Отзыв, Отчёт о практике)
-        ifPresent(vars, "фио_орг_руководителя",       p, "имяРуководителяОтОрганизации");
-        ifPresent(vars, "должность_орг_руководителя", p, "должностьВОрганизации");
-        ifPresent(vars, "фио_подпись",                p, "имяДляПодписи");
-
         return p;
-    }
-
-    private static void ifPresent(Map<String, String> vars, String varName,
-                                   Map<String, String> placeholders, String placeholder) {
-        String v = vars.get(varName);
-        if (v != null && !v.isBlank()) {
-            placeholders.put(placeholder, v);
-        }
     }
 
     // ── Petrovich name declension ─────────────────────────────────────────────
 
-    /**
-     * Declines a Russian full name (Фамилия Имя Отчество) to the given grammatical case.
-     * Falls back to the original if the input is not in 3-word format.
-     */
     private String declineFio(String fio, Case wordCase) {
         String[] parts = fio.trim().split("\\s+");
-        if (parts.length != 3) {
-            return fio; // unknown format — return as-is
-        }
+        if (parts.length != 3) return fio;
         try {
             Gender gender = petrovich.gender(parts[2], Gender.Both);
             String last  = petrovich.say(parts[0], NameType.LastName,       gender, wordCase);
@@ -272,65 +264,29 @@ public class DocumentFillService {
         return isFemale(fio) ? "Обучающаяся" : "Обучающийся";
     }
 
+    private String genderForm(String fio) {
+        return isFemale(fio) ? "студентке" : "студенту";
+    }
+
     private boolean isFemale(String fio) {
         String[] parts = fio.trim().split("\\s+");
         if (parts.length < 3) return false;
         return petrovich.gender(parts[2], Gender.Both) == Gender.Female;
     }
 
-    // ── DOCX filling (Apache POI) ─────────────────────────────────────────────
+    // ── DOCX filling ──────────────────────────────────────────────────────────
 
-    private void fillTemplateDir(String relDir, Map<String, String> placeholders,
-                                  ZipOutputStream zos) throws IOException {
-        String resourceBase = "/templates/" + relDir;
-        // Enumerate templates from the classpath resource directory
-        try (InputStream listing = getClass().getResourceAsStream(resourceBase + "/.index")) {
-            // Fallback: scan known template filenames via resource listing
-        }
-        // Walk the directory on disk (works when running from IDE/jar with exploded resources)
-        java.net.URL dirUrl = getClass().getResource(resourceBase);
-        if (dirUrl == null) {
-            log.warn("Template directory not found on classpath: {}", resourceBase);
-            return;
-        }
-        java.nio.file.Path dirPath;
-        try {
-            dirPath = java.nio.file.Paths.get(dirUrl.toURI());
-        } catch (java.net.URISyntaxException e) {
-            throw new IOException("Cannot resolve template directory URI", e);
-        }
-        try (java.nio.file.DirectoryStream<java.nio.file.Path> stream =
-                     java.nio.file.Files.newDirectoryStream(dirPath, "*.docx")) {
-            for (java.nio.file.Path file : stream) {
-                String filename = file.getFileName().toString();
-                log.debug("Filling template: {}", filename);
-                byte[] filled = fillDocx(java.nio.file.Files.newInputStream(file), placeholders);
-                zos.putNextEntry(new ZipEntry(filename));
-                zos.write(filled);
-                zos.closeEntry();
-            }
-        }
-    }
-
-    /**
-     * Opens a DOCX template stream and replaces all placeholder occurrences
-     * in paragraph runs and table cell runs. Returns filled document bytes.
-     */
     private byte[] fillDocx(InputStream templateStream, Map<String, String> replacements)
             throws IOException {
         try (XWPFDocument doc = new XWPFDocument(templateStream)) {
             for (XWPFParagraph para : doc.getParagraphs()) {
-                for (XWPFRun run : para.getRuns()) {
-                    replaceInRun(run, replacements);
-                }
+                replaceParagraph(para, replacements);
             }
             for (XWPFTable table : doc.getTables()) {
                 for (XWPFTableRow row : table.getRows()) {
                     for (XWPFTableCell cell : row.getTableCells()) {
                         for (XWPFParagraph para : cell.getParagraphs()) {
-                            for (XWPFRun run : para.getRuns()) {
-                                replaceInRun(run, replacements);
-                            }
+                            replaceParagraph(para, replacements);
                         }
                     }
                 }
@@ -341,15 +297,35 @@ public class DocumentFillService {
         }
     }
 
-    private void replaceInRun(XWPFRun run, Map<String, String> replacements) {
-        int chunks = run.getCTR().getTArray().length;
-        for (int i = 0; i < chunks; i++) {
-            String text = run.getText(i);
-            if (text == null) continue;
-            for (Map.Entry<String, String> e : replacements.entrySet()) {
+    /**
+     * Replaces placeholders in a paragraph by merging all run texts first.
+     * This handles placeholders that Word splits across multiple runs.
+     * The replaced text is written into the first run; remaining runs are cleared.
+     */
+    private void replaceParagraph(XWPFParagraph para, Map<String, String> replacements) {
+        List<XWPFRun> runs = para.getRuns();
+        if (runs.isEmpty()) return;
+
+        StringBuilder sb = new StringBuilder();
+        for (XWPFRun run : runs) {
+            String t = run.getText(0);
+            sb.append(t != null ? t : "");
+        }
+
+        String text = sb.toString();
+        boolean changed = false;
+        for (Map.Entry<String, String> e : replacements.entrySet()) {
+            if (text.contains(e.getKey())) {
                 text = text.replace(e.getKey(), e.getValue());
+                changed = true;
             }
-            run.setText(text, i);
+        }
+
+        if (changed) {
+            runs.get(0).setText(text, 0);
+            for (int i = 1; i < runs.size(); i++) {
+                runs.get(i).setText("", 0);
+            }
         }
     }
 }
