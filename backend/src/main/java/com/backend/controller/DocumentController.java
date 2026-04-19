@@ -27,7 +27,7 @@ public class DocumentController {
     public ResponseEntity<byte[]> getDocuments(@RequestParam String studentUri) {
         log.info("Document generation requested for student: {}", studentUri);
         try {
-            byte[] zip = documentFillService.generateZipViaHelper(studentUri);
+            byte[] zip = documentFillService.generateZip(studentUri);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.parseMediaType("application/zip"));

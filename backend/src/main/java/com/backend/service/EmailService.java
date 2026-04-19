@@ -49,6 +49,27 @@ public class EmailService {
     }
 
     /**
+     * Отправляет пакет документов научному руководителю.
+     */
+    public void sendDocumentsToSupervisor(String to, String studentName, byte[] zipBytes) throws Exception {
+        MimeMessage msg = mailSender.createMimeMessage();
+        MimeMessageHelper helper = new MimeMessageHelper(msg, true, "UTF-8");
+        helper.setTo(to);
+        helper.setSubject("Документы студента " + studentName + " — для подписи");
+        helper.setText("""
+                Здравствуйте!
+
+                Студент %s подал заявку на практику.
+                Во вложении — пакет документов, требующих вашей подписи.
+
+                Пожалуйста, ознакомьтесь с документами и верните подписанные экземпляры на кафедру.
+                """.formatted(studentName));
+        helper.addAttachment("documents_" + studentName.replace(" ", "_") + ".zip",
+                new ByteArrayResource(zipBytes), "application/zip");
+        mailSender.send(msg);
+    }
+
+    /**
      * Отправляет напоминание студенту.
      */
     public void sendReminder(String to, int attempt) {
