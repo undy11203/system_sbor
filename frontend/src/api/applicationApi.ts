@@ -64,3 +64,25 @@ export async function getSubmissionStatus(uri: string): Promise<string> {
   const { data } = await api.get<{ status: string }>('/status', { params: { uri } });
   return data.status;
 }
+
+// ── Deadline (via /api/submissions) ──────────────────────────────────────────
+
+const submissionsApi = axios.create({ baseURL: '/api/submissions' });
+submissionsApi.interceptors.request.use(config => {
+  const token = localStorage.getItem('token');
+  if (token) config.headers.Authorization = `Bearer ${token}`;
+  return config;
+});
+
+export async function getDeadline(): Promise<string> {
+  const { data } = await submissionsApi.get<{ deadline: string }>('/deadline');
+  return data.deadline;
+}
+
+export async function setDeadline(deadline: string): Promise<void> {
+  await submissionsApi.put('/deadline', { deadline });
+}
+
+export async function markReceivedNew(studentUri: string): Promise<void> {
+  await submissionsApi.post('/receive', null, { params: { studentUri } });
+}

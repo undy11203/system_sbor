@@ -17,6 +17,9 @@ import {
   updateEntry,
   markReceived,
   getSubmissionStatus,
+  getDeadline,
+  setDeadline,
+  markReceivedNew,
   type EntryItem,
   type EntryData,
 } from '../api/applicationApi';
@@ -66,7 +69,10 @@ export default function SecretaryPage() {
         <EntryList schemaType="supervisor-ngu" degree="Руководитель_от_НГУ" />
       )}
       {tab === 'list-students' && (
-        <EntryList schemaType="student" degree="" />
+        <>
+          <DeadlinePanel />
+          <EntryList schemaType="student" degree="" />
+        </>
       )}
       {tab === 'forms' && <FormSchemaManager />}
     </div>
@@ -195,7 +201,7 @@ function EntryList({ schemaType, degree }: { schemaType: string; degree: string 
   useEffect(() => { load(); }, [schemaType]);
 
   async function handleMarkReceived(uri: string) {
-    await markReceived(uri);
+    await markReceivedNew(uri);
     setStatuses(prev => ({ ...prev, [uri]: 'RECEIVED' }));
   }
 
@@ -375,6 +381,57 @@ function FieldRow({
         onSelect={(uri, label) => onChange(uri, label)}
         onChange={(val) => onChange(val, val)}
       />
+    </div>
+  );
+}
+
+/* ── Deadline panel ───────────────────────────────────────────────────────── */
+
+function DeadlinePanel() {
+  const [deadline, setDeadlineState] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    getDeadline().then(setDeadlineState).catch(() => {});
+  }, []);
+
+  async function handleSave() {
+    if (!deadline) return;
+    setSaving(true);
+    setSaved(false);
+    setError('');
+    try {
+      await setDeadline(deadline);
+      setSaved(true);
+    } catch {
+      setError('Ошибка сохранения даты');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="deadline-panel">
+      <label className="deadline-panel__label">Срок сдачи документов</label>
+      <div className="deadline-panel__row">
+        <input
+          type="date"
+          className="deadline-panel__input"
+          value={deadline}
+          onChange={e => { setDeadlineState(e.target.value); setSaved(false); }}
+        />
+        <button
+          className="sf__btn sf__btn--primary deadline-panel__btn"
+          onClick={handleSave}
+          disabled={saving || !deadline}
+        >
+          {saving ? 'Сохранение...' : 'Сохранить'}
+        </button>
+        {saved && <span className="deadline-panel__ok">Сохранено</span>}
+        {error && <span className="sf__error">{error}</span>}
+      </div>
     </div>
   );
 }

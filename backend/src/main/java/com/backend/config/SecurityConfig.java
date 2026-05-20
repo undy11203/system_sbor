@@ -31,6 +31,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/applications/**").hasAnyRole("STUDENT", "SECRETARY")
                 .requestMatchers("/api/documents/**").hasRole("SECRETARY")
                 .requestMatchers(HttpMethod.PUT, "/api/forms/**").hasRole("SECRETARY")
+                .requestMatchers("/api/submissions/**").hasRole("SECRETARY")
                 .requestMatchers("/api/ontology/**").authenticated()
                 .anyRequest().authenticated()
             )
