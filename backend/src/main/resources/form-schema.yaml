@@ -54,7 +54,7 @@ sections:
 
   - title: "Руководители практики"
     fields:
-      - prop: "пишет_вкр_у"
+      - prop: "Руководитель_от_НГУ"
         entity: student
         type: object
         label: "Руководитель практики от НГУ"

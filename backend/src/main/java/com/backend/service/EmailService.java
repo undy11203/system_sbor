@@ -72,7 +72,7 @@ public class EmailService {
     /**
      * Отправляет напоминание студенту.
      */
-    public void sendReminder(String to, int attempt) {
+    public void sendReminder(String to, int attempt, java.time.LocalDate deadline) {
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(to);
         message.setSubject("Напоминание #%d — документы для практики".formatted(attempt));
@@ -80,10 +80,11 @@ public class EmailService {
                 Здравствуйте!
 
                 Напоминание #%d: вы подали заявку на прохождение практики, но бумажное заявление ещё не поступило на кафедру.
-                Пожалуйста, принесите подписанное заявление на кафедру.
+                Срок сдачи документов: %s.
+                Пожалуйста, принесите подписанное заявление на кафедру до указанной даты.
 
                 Если вы уже сдали документы — проигнорируйте это письмо.
-                """.formatted(attempt));
+                """.formatted(attempt, deadline));
         mailSender.send(message);
     }
 }

@@ -23,6 +23,9 @@ public class StudentSubmission {
 
     private Instant receivedAt;
 
+    @Column(nullable = false)
+    private int remindersSent = 0;
+
     public enum Status { PENDING, RECEIVED }
 
     public StudentSubmission() {}
@@ -39,6 +42,8 @@ public class StudentSubmission {
     public Status getStatus() { return status; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getReceivedAt() { return receivedAt; }
+    public int getRemindersSent() { return remindersSent; }
+    public void incrementRemindersSent() { this.remindersSent++; }
 
     public void markReceived() {
         this.status = Status.RECEIVED;
