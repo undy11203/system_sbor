@@ -1,64 +1,133 @@
 # Система сбора информации о студентах
 
-Интеллектуальное веб-приложение для автоматизации документооборота кафедры, связанного со студентами, практиками и ВКР.
+Веб-приложение для автоматизации документооборота кафедры: сбора информации о студентах, практиках и ВКР, работы с OWL-онтологией и формирования DOCX-документов. В системе предусмотрены роли студента и секретаря, авторизация по коду из письма и JWT.
 
-## Архитектура системы
+## Технологии
 
-### Технологический стек
-- **Frontend**: React + TypeScript
-- **Backend**: Python + FastAPI
-- **Database**: PostgreSQL
-- **Ontology**: GraphDB/OWL
-- **File Storage**: MinIO
-- **Containerization**: Docker + Docker Compose
+- **Backend:** Java 17, Spring Boot 3.2, Maven, Spring Security, Spring Data JPA.
+- **Frontend:** React 18, TypeScript, Vite.
+- **Данные:** PostgreSQL, Apache Jena Fuseki, OWL/SPARQL.
+- **Документы:** Apache POI и DOCX-шаблоны.
 
-### Основные подсистемы
+## Требования
 
-1. **Веб-интерфейс** - взаимодействие с пользователем, динамические формы
-2. **Слой динамического формирования форм** - построение форм на основе онтологии
-3. **Модуль генерации документов** - генерация DOCX/PDF по шаблонам
-4. **Онтология и база знаний** - описание сущностей и проверка согласованности
-5. **Q/A-модуль** - помощь пользователям на естественном языке
-6. **Интеграционный слой** - обмен данными с внешними системами
+Для локальной разработки необходимы:
 
-## Документы, поддерживаемые в MVP
+- Java 17;
+- Maven 3.9+;
+- Node.js 20+ и npm;
+- PostgreSQL;
+- Docker с Docker Compose для запуска Fuseki.
 
-- Заявление на практику
-- Заявление на ВКР
-- Индивидуальное задание
-- Отчёт по практике
-- Отзыв руководителя практики
+## Запуск
 
-## Установка и запуск
+### 1. Запуск Fuseki
+
+Из корня репозитория:
 
 ```bash
-# Клонирование репозитория
-git clone <repository-url>
-cd system_sbor
+docker compose up -d
+```
 
-# Запуск в Docker
-docker-compose up -d
+В текущей конфигурации Compose запускает **только Fuseki**. Backend закомментирован в `docker-compose.yml`, а frontend и PostgreSQL как Docker-сервисы не настроены.
 
-# Локальная разработка
-## Backend
+После запуска доступны:
+
+- веб-интерфейс Fuseki: <http://localhost:3030/>;
+- SPARQL endpoint: <http://localhost:3030/ontology/sparql>;
+- SPARQL Update: <http://localhost:3030/ontology/update>.
+
+Онтология загружается из `hepler/src/main/resources/main_students_all.owl`.
+
+### 2. Подготовка PostgreSQL
+
+Создайте базу данных:
+
+```bash
+createdb system_sbor
+```
+
+По умолчанию backend использует `jdbc:postgresql://localhost:5432/system_sbor`. Параметры подключения можно переопределить переменными окружения:
+
+```bash
+export DB_URL=jdbc:postgresql://localhost:5432/system_sbor
+export DB_USERNAME=postgres
+export DB_PASSWORD='<пароль>'
+```
+
+### 3. Настройка backend
+
+Для отправки писем и работы JWT задайте собственные значения:
+
+```bash
+export MAIL_USERNAME='<адрес отправителя>'
+export MAIL_PASSWORD='<пароль приложения SMTP>'
+export JWT_SECRET='<случайный секрет длиной не менее 32 символов>'
+```
+
+При необходимости адреса Fuseki также можно изменить:
+
+```bash
+export FUSEKI_ENDPOINT=http://localhost:3030/ontology/sparql
+export FUSEKI_UPDATE_ENDPOINT=http://localhost:3030/ontology/update
+```
+
+Остальные настройки находятся в `backend/src/main/resources/application.properties`.
+
+### 4. Запуск backend
+
+Backend зависит от локального Maven-модуля `helper`, поэтому сначала установите его в локальный репозиторий Maven, а затем запустите приложение:
+
+```bash
+mvn -f hepler/pom.xml install
 cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload
+mvn spring-boot:run
+```
 
-## Frontend
+Backend будет доступен по адресу <http://localhost:8080>.
+
+### 5. Запуск frontend
+
+В отдельном терминале:
+
+```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-## Структура проекта
+Frontend откроется на <http://localhost:5173>. Запросы к `/api` проксируются Vite на `http://localhost:8080`.
 
+## Сборка и проверка
+
+Backend:
+
+```bash
+cd backend
+mvn test
+mvn package
 ```
+
+Frontend:
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
+## Основные каталоги
+
+```text
 system_sbor/
-├── backend/          # FastAPI backend
-├── frontend/         # React frontend
-├── ontology/         # OWL онтология
-├── templates/        # DOCX шаблоны документов
-├── docker-compose.yml
+├── backend/                  # Spring Boot backend
+│   └── src/main/resources/
+│       ├── templates/        # DOCX-шаблоны документов
+│       └── application.properties
+├── frontend/                 # React + TypeScript frontend
+├── hepler/                   # Maven-модуль helper и исходные OWL-онтологии
+│   └── src/main/resources/main_students_all.owl
+├── jena/                     # Docker-образ Apache Jena Fuseki
+├── docker-compose.yml        # Запуск Fuseki
 └── README.md
 ```
